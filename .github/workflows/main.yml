@@ -17,9 +17,9 @@ jobs:
     steps:
       - name: Setup Server Credentials & SSH
         run: |
-          sudo useradd -m -s /bin/bash runneradmin
-          echo "runneradmin:${{ secrets.RDP_PASS }}" | sudo chpasswd
-          sudo usermod -aG sudo runneradmin
+          sudo useradd -m -s /bin/bash parid
+          echo "parid:${{ secrets.RDP_PASS }}" | sudo chpasswd
+          sudo usermod -aG sudo parid
           sudo systemctl start ssh
           sudo systemctl enable ssh
 
@@ -81,7 +81,7 @@ jobs:
           )
           Invoke-RestMethod -Uri "https://api.telegram.org/bot$botToken/setMyCommands" -Method Post -ContentType "application/json" -Body (@{commands=$menu} | ConvertTo-Json -Depth 3) | Out-Null
 
-          Send-Msg "[SYS] <b>UBUNTU SERVER ACTIVE!</b>`n`n[KEY] <b>SSH:</b> <code>ssh runneradmin@$ipInfo</code>`nPass: <code>$passInfo</code>`n`nFile instalasi berat telah disiapkan di <code>/root/setup.sh</code>. Ketik /setup untuk mengeksekusi."
+          Send-Msg "[SYS] <b>UBUNTU SERVER ACTIVE!</b>`n`n[KEY] <b>SSH:</b> <code>ssh parid@$ipInfo</code>`nPass: <code>$passInfo</code>`n`nFile instalasi berat telah disiapkan di <code>/root/setup.sh</code>. Ketik /setup untuk mengeksekusi."
 
           $offset = 0
           while ($true) {
@@ -95,7 +95,7 @@ jobs:
                       if ($text.StartsWith("/")) {
                           switch -Regex ($text) {
                               "^/(start|help)" { Send-Msg "[INFO] <b>UBUNTU COMMAND CENTER</b>`nGunakan menu bot di pojok kiri bawah." }
-                              "^/ip" { Send-Msg "[KEY] <b>SSH:</b>`n<code>ssh runneradmin@$ipInfo</code>`nPass: <code>$passInfo</code>" }
+                              "^/ip" { Send-Msg "[KEY] <b>SSH:</b>`n<code>ssh parid@$ipInfo</code>`nPass: <code>$passInfo</code>" }
                               "^/status" { 
                                   $ram = Run-Bash "free -m | awk '/Mem:/ {print `$3`" MB / `" `$2`" MB`"}'"
                                   $cpu = Run-Bash "top -bn1 | grep 'Cpu(s)' | awk '{print `$2 + `$4`"%`"}'"
