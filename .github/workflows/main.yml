@@ -1,4 +1,4 @@
-name: VPS-AutoPtero-v2.9
+name: RDP-v7.0-PteroSuite-Auto
 
 on:
   workflow_dispatch:
@@ -20,9 +20,9 @@ jobs:
 
       - name: Setup Server Credentials & SSH
         run: |
-          sudo useradd -m -s /bin/bash parid
-          echo "parid:${{ secrets.RDP_PASS }}" | sudo chpasswd
-          sudo usermod -aG sudo parid
+          sudo useradd -m -s /bin/bash runneradmin
+          echo "runneradmin:${{ secrets.RDP_PASS }}" | sudo chpasswd
+          sudo usermod -aG sudo runneradmin
           sudo systemctl start ssh
           sudo systemctl enable ssh
 
@@ -51,7 +51,6 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
-          CF_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           PTERO_DB_PASS: ${{ secrets.RDP_PASS }}
         run: |
           $botToken = $env:BOT_TOKEN; $allowedId = $env:CHAT_ID; $ipInfo = $env:TAILSCALE_IP
@@ -69,13 +68,13 @@ jobs:
           $menu = @(
               @{command="help"; description="Panduan AI & Bot"}, @{command="status"; description="Cek beban CPU/RAM"},
               @{command="ip"; description="Akses SSH & Network"}, @{command="neofetch"; description="Tampilkan spek sistem"},
-              @{command="setup"; description="Auto-install Ptero & Web Stack"}, @{command="scanhost"; description="Nmap target IP"},
+              @{command="setup"; description="Auto-install Ptero Suite"}, @{command="scanhost"; description="Nmap target IP"},
               @{command="kill"; description="pkill proses Linux"}, @{command="expose"; description="Cloudflared tunnel port"},
               @{command="cmd"; description="Jalankan bash (Support cd)"}
           )
           Invoke-RestMethod -Uri "https://api.telegram.org/bot$botToken/setMyCommands" -Method Post -ContentType "application/json" -Body (@{commands=$menu} | ConvertTo-Json -Depth 3) | Out-Null
 
-          Send-Msg "[SYS] <b>UBUNTU SERVER ACTIVE!</b>`n`n[KEY] <b>SSH:</b> <code>ssh parid@$ipInfo</code>`nPass: <code>$passInfo</code>`n`nFile <code>setup.sh</code> telah di-checkout. Ketik /setup untuk eksekusi."
+          Send-Msg "[SYS] <b>UBUNTU SERVER ACTIVE!</b>`n`n[KEY] <b>SSH:</b> <code>ssh runneradmin@$ipInfo</code>`nPass: <code>$passInfo</code>`n`nFile <code>setup.sh</code> telah di-checkout. Ketik /setup untuk eksekusi."
 
           $offset = 0
           while ($true) {
@@ -89,7 +88,7 @@ jobs:
                       if ($text.StartsWith("/")) {
                           switch -Regex ($text) {
                               "^/(start|help)" { Send-Msg "[INFO] <b>COMMAND CENTER</b>`nGunakan menu di pojok kiri bawah." }
-                              "^/ip" { Send-Msg "[KEY] <b>SSH:</b>`n<code>ssh parid@$ipInfo</code>`nPass: <code>$passInfo</code>" }
+                              "^/ip" { Send-Msg "[KEY] <b>SSH:</b>`n<code>ssh runneradmin@$ipInfo</code>`nPass: <code>$passInfo</code>" }
                               "^/neofetch" { Send-Msg "[SYS] <b>Neofetch:</b>`n<pre>$(Run-Bash "neofetch --stdout")</pre>" }
                               "^/status" { 
                                   $ramUsed = Run-Bash "free -m | grep Mem | awk '{print `$3}'"
@@ -108,7 +107,7 @@ jobs:
                                   Send-Msg "[NET] Tunnel Port $port aktif:`n<code>$(Run-Bash "grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' /tmp/cf-$port.log | head -1")</code>" 
                               }
                               "^/setup" {
-                                  Send-Msg "[SYS] Mengeksekusi <code>/root/setup.sh</code> di background.`nPass SSH telah di-inject sebagai kredensial DB Pterodactyl.`nCek progress: <code>/cmd tail -n 15 /tmp/setup.log</code>"
+                                  Send-Msg "[SYS] Mengeksekusi <code>/root/setup.sh</code> di background...`nPass SSH (dari Secrets) telah di-inject sebagai password DB.`nCek progress: <code>/cmd tail -n 15 /tmp/setup.log</code>"
                                   Run-Bash "export SETUP_DB_PASS='$env:PTERO_DB_PASS'; nohup bash /root/setup.sh > /tmp/setup.log 2>&1 &" | Out-Null
                               }
                               "^/cmd (.+)" { 
@@ -134,3 +133,9 @@ jobs:
                   }
               } catch { Start-Sleep 5 }
           }
+
+      - name: Tailscale Node Cleanup
+        if: always()
+        run: |
+          echo "Memutuskan koneksi dan menghapus node dari Tailnet..."
+          sudo tailscale logout || true
