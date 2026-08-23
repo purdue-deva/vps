@@ -1,0 +1,144 @@
+name: VPS-V0.2_Beta
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */5 * * *'
+
+concurrency:
+  group: tailscale-exit-node
+  cancel-in-progress: true
+
+jobs:
+  ubuntu-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Setup Server Credentials & SSH
+        run: |
+          sudo useradd -m -s /bin/bash runneradmin
+          echo "runneradmin:${{ secrets.RDP_PASS }}" | sudo chpasswd
+          sudo usermod -aG sudo runneradmin
+          sudo systemctl start ssh
+          sudo systemctl enable ssh
+
+      - name: Install Network Core (Tailscale, Cloudflared & Utils)
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="azure-workstation" --accept-routes
+          
+          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared.deb
+          sudo apt-get update -y && sudo apt-get install -y speedtest-cli nmap jq curl tar unzip
+
+      - name: Inject setup.sh to Root Directory
+        run: |
+          sudo cat << 'EOF' > /root/setup.sh
+          #!/bin/bash
+          echo "[$(date)] Memulai proses setup environment berat..."
+          
+          # 1. Update sistem
+          apt-get update -y
+          
+          # 2. Instalasi Dependensi Ptero / Web Dev Stack (MySQL, PHP, Node.js)
+          apt-get install -y mariadb-client apt-transport-https ca-certificates software-properties-common
+          
+          # Docker sudah ada di GH Runner, kita pastikan saja nyala
+          systemctl enable docker && systemctl start docker
+          
+          # 3. Contoh: Download Pterodactyl Wings Installer (Uncomment jika mau dipakai)
+          # curl -sSL https://get.pterodactyl.io | bash
+          
+          echo "[$(date)] Setup selesai! Environment siap digunakan."
+          EOF
+          sudo chmod +x /root/setup.sh
+
+      - name: Get Tailscale IP
+        run: echo "TAILSCALE_IP=$(tailscale ip -4)" >> $GITHUB_ENV
+
+      - name: Run AzureBot Core Engine
+        shell: pwsh
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          $botToken = $env:BOT_TOKEN; $allowedId = $env:CHAT_ID; $ipInfo = $env:TAILSCALE_IP
+          $passInfo = "${{ secrets.RDP_PASS }}"; $groqKey = $env:GROQ_KEY
+
+          function Send-Msg ($msg) {
+              $payload = @{ chat_id = $allowedId; text = $msg; parse_mode = "HTML" } | ConvertTo-Json
+              Invoke-RestMethod -Uri "https://api.telegram.org/bot$botToken/sendMessage" -Method Post -ContentType "application/json" -Body $payload -ErrorAction SilentlyContinue | Out-Null
+          }
+
+          function Run-Bash ($cmd) {
+              try { return (Invoke-Expression "sudo bash -c `"$cmd`" 2>&1" | Out-String).Trim() } catch { return "$_" }
+          }
+
+          $menu = @(
+              @{command="help"; description="Panduan AI & Bot"}, @{command="status"; description="Cek load CPU/RAM server"},
+              @{command="ip"; description="IP & Kredensial SSH"}, @{command="speedtest"; description="Uji speedtest-cli native"},
+              @{command="setup"; description="Eksekusi /root/setup.sh (Ptero/Web)"}, @{command="scanhost"; description="Nmap target IP"},
+              @{command="kill"; description="pkill proses Linux"}, @{command="expose"; description="Cloudflared tunnel port"},
+              @{command="cmd"; description="Jalankan perintah Bash (Support cd)"}
+          )
+          Invoke-RestMethod -Uri "https://api.telegram.org/bot$botToken/setMyCommands" -Method Post -ContentType "application/json" -Body (@{commands=$menu} | ConvertTo-Json -Depth 3) | Out-Null
+
+          Send-Msg "[SYS] <b>UBUNTU SERVER ACTIVE!</b>`n`n[KEY] <b>SSH:</b> <code>ssh runneradmin@$ipInfo</code>`nPass: <code>$passInfo</code>`n`nFile instalasi berat telah disiapkan di <code>/root/setup.sh</code>. Ketik /setup untuk mengeksekusi."
+
+          $offset = 0
+          while ($true) {
+              try {
+                  $updates = Invoke-RestMethod -Uri "https://api.telegram.org/bot$botToken/getUpdates?offset=$offset&timeout=30" -TimeoutSec 35
+                  foreach ($upd in $updates.result) {
+                      $offset = $upd.update_id + 1
+                      $text = $upd.message.text
+                      if ([string]::IsNullOrWhiteSpace($text) -or $upd.message.from.id.ToString() -ne $allowedId) { continue }
+
+                      if ($text.StartsWith("/")) {
+                          switch -Regex ($text) {
+                              "^/(start|help)" { Send-Msg "[INFO] <b>UBUNTU COMMAND CENTER</b>`nGunakan menu bot di pojok kiri bawah." }
+                              "^/ip" { Send-Msg "[KEY] <b>SSH:</b>`n<code>ssh runneradmin@$ipInfo</code>`nPass: <code>$passInfo</code>" }
+                              "^/status" { 
+                                  $ram = Run-Bash "free -m | awk '/Mem:/ {print `$3`" MB / `" `$2`" MB`"}'"
+                                  $cpu = Run-Bash "top -bn1 | grep 'Cpu(s)' | awk '{print `$2 + `$4`"%`"}'"
+                                  $up = Run-Bash "uptime -p"
+                                  Send-Msg "[STATS] <b>SERVER HEALTH</b>`n- CPU: $cpu`n- RAM: $ram`n- Uptime: $up"
+                              }
+                              "^/speedtest" { Send-Msg "[NET] <b>Speedtest:</b>`n<pre>$(Run-Bash "speedtest-cli --simple")</pre>" }
+                              "^/scanhost (.+)" { Send-Msg "[SCAN] <b>Nmap:</b>`n<pre>$(Run-Bash "nmap -Pn $($matches[1])")</pre>" }
+                              "^/kill (.+)" { Send-Msg "[KILL] <pre>$(Run-Bash "pkill -9 -f $($matches[1]) && echo 'Killed' || echo 'Not Found'")</pre>" }
+                              "^/expose (\d+)" { 
+                                  Run-Bash "nohup cloudflared tunnel --url http://localhost:$($matches[1]) > /tmp/cf.log 2>&1 &"
+                                  Start-Sleep 5
+                                  Send-Msg "[NET] Tunnel Port $($matches[1]): <code>$(Run-Bash "grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' /tmp/cf.log | head -1")</code>" 
+                              }
+                              "^/setup" {
+                                  Send-Msg "[SYS] Mengeksekusi <code>/root/setup.sh</code> di background. Proses ini memakan waktu beberapa menit...`n`nCek log secara berkala dengan:`n<code>/cmd cat /tmp/setup.log</code>"
+                                  # Menjalankan setup di background agar bot tidak hang
+                                  Run-Bash "nohup bash /root/setup.sh > /tmp/setup.log 2>&1 &" | Out-Null
+                              }
+                              "^/cmd (.+)" { 
+                                  $cmdInput = $matches[1].Trim()
+                                  if ($cmdInput.StartsWith("cd ")) {
+                                      $targetDir = $cmdInput.Substring(3).Trim()
+                                      try {
+                                          Set-Location -Path $targetDir
+                                          Send-Msg "[BASH] 📁 Pindah direktori ke:`n<code>$((Get-Location).Path)</code>"
+                                      } catch { Send-Msg "[X] Direktori tidak ditemukan." }
+                                  } else {
+                                      $out = Run-Bash $cmdInput
+                                      if ([string]::IsNullOrWhiteSpace($out)) { $out = "(Sukses / Tidak ada output)" }
+                                      Send-Msg "[BASH] <b>Output:</b>`n<pre>$out</pre>"
+                                  }
+                              }
+                          }
+                      } else {
+                          $pld = @{ model="openai/gpt-oss-120b"; messages=@(@{role="system"; content="Kamu AzureBot, asisten server Ubuntu Tuan Farid Achmad (@ridxdevs). Jawab singkat, loyal, dan santai."}, @{role="user"; content=$text}) } | ConvertTo-Json -Depth 5
+                          $res = Invoke-RestMethod -Uri "https://api.groq.com/openai/v1/chat/completions" -Method Post -Headers @{"Authorization"="Bearer $groqKey"; "Content-Type"="application/json"} -Body $pld -TimeoutSec 15
+                          Send-Msg $res.choices[0].message.content.Replace('<', '&lt;').Replace('>', '&gt;')
+                      }
+                  }
+              } catch { Start-Sleep 5 }
+          }
