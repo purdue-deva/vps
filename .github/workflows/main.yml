@@ -1,4 +1,4 @@
-name: VPS-V0.2_Beta
+name: Orbot-Beta-2.0
 
 on:
   workflow_dispatch:
@@ -34,26 +34,22 @@ jobs:
 
       - name: Inject setup.sh to Root Directory
         run: |
-          sudo cat << 'EOF' > /root/setup.sh
+          sudo tee /root/setup.sh > /dev/null << 'EOF'
           #!/bin/bash
           echo "[$(date)] Memulai proses setup environment berat..."
           
           # 1. Update sistem
           apt-get update -y
           
-          # 2. Instalasi Dependensi Ptero / Web Dev Stack (MySQL, PHP, Node.js)
+          # 2. Instalasi Dependensi Ptero / Web Dev Stack
           apt-get install -y mariadb-client apt-transport-https ca-certificates software-properties-common
           
-          # Docker sudah ada di GH Runner, kita pastikan saja nyala
+          # Docker dipastikan nyala
           systemctl enable docker && systemctl start docker
-          
-          # 3. Contoh: Download Pterodactyl Wings Installer (Uncomment jika mau dipakai)
-          # curl -sSL https://get.pterodactyl.io | bash
           
           echo "[$(date)] Setup selesai! Environment siap digunakan."
           EOF
           sudo chmod +x /root/setup.sh
-
       - name: Get Tailscale IP
         run: echo "TAILSCALE_IP=$(tailscale ip -4)" >> $GITHUB_ENV
 
