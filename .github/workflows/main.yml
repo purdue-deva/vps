@@ -98,7 +98,7 @@ jobs:
                                   Send-Msg "[STATS] <b>SERVER HEALTH</b>`n- CPU: $cpuVal%`n- RAM: $ramUsed MB / $ramTotal MB`n- Uptime: $up"
                               }
                               "^/speedtest" { Send-Msg "[NET] <b>Speedtest:</b>`n<pre>$(Run-Bash "speedtest-cli --simple")</pre>" }
-                              "^/scanhost (.+)" { Send-Msg "[SCAN] <b>Nmap Result:</b>`n<pre>$(Run-Bash "nmap -Pn -F $($matches[1])")</pre>" }
+                              "^/scanhost (.+)" { Send-Msg "[SCAN] <b>Nmap Result:</b>`n<pre>$(Run-Bash "nmap -Pn -F localhost")</pre>" }
                               "^/kill (.+)" { Send-Msg "[KILL] <pre>$(Run-Bash "pkill -9 -f $($matches[1]) && echo 'Killed' || echo 'Not Found'")</pre>" }
                               "^/expose (\d+)" { 
                                   $port = $matches[1]
