@@ -68,7 +68,7 @@ php artisan p:user:make \
     --email="saintparid@gmail.com" \
     --username="parid" \
     --name-first="Farid" \
-    --name-last="Achmad" \
+    --name-last="A." \
     --password="paridos" \
     --admin=1
 
@@ -149,6 +149,7 @@ RestartSec=5s
 WantedBy=multi-user.target
 EOF
 systemctl enable wings
+docker network create pterodactyl_nw
 
 echo -e "\e[32m[V] PTERODACTYL SUITE SELESAI DIEKSEKUSI!\e[0m"
 echo -e "\e[33mSilakan login ke https://${PANEL_DOMAIN}\e[0m"
