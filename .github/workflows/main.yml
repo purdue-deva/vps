@@ -1,4 +1,4 @@
-name: RDP-v7.0-PteroSuite-Auto
+name: RDP-v7.1-Ptero-Cloudflared
 
 on:
   workflow_dispatch:
@@ -28,12 +28,18 @@ jobs:
 
       - name: Install Network Core (Tailscale, Cloudflared & CLI Utils)
         run: |
+          # 1. Tailscale
           curl -fsSL https://tailscale.com/install.sh | sh
           sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="azure-workstation" --accept-routes
           
+          # 2. Cloudflared (Linux Native)
           curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared.deb
           
+          # Install Cloudflared sebagai service menggunakan Token dari Secrets!
+          sudo cloudflared service install ${{ secrets.CF_TUNNEL_TOKEN }}
+          
+          # 3. CLI Utils
           sudo apt-get update -y
           sudo apt-get install -y speedtest-cli nmap jq curl tar unzip neofetch
 
@@ -69,12 +75,11 @@ jobs:
               @{command="help"; description="Panduan AI & Bot"}, @{command="status"; description="Cek beban CPU/RAM"},
               @{command="ip"; description="Akses SSH & Network"}, @{command="neofetch"; description="Tampilkan spek sistem"},
               @{command="setup"; description="Auto-install Ptero Suite"}, @{command="scanhost"; description="Nmap target IP"},
-              @{command="kill"; description="pkill proses Linux"}, @{command="expose"; description="Cloudflared tunnel port"},
-              @{command="cmd"; description="Jalankan bash (Support cd)"}
+              @{command="kill"; description="pkill proses Linux"}, @{command="cmd"; description="Jalankan bash (Support cd)"}
           )
           Invoke-RestMethod -Uri "https://api.telegram.org/bot$botToken/setMyCommands" -Method Post -ContentType "application/json" -Body (@{commands=$menu} | ConvertTo-Json -Depth 3) | Out-Null
 
-          Send-Msg "[SYS] <b>UBUNTU SERVER ACTIVE!</b>`n`n[KEY] <b>SSH:</b> <code>ssh runneradmin@$ipInfo</code>`nPass: <code>$passInfo</code>`n`nFile <code>setup.sh</code> telah di-checkout. Ketik /setup untuk eksekusi."
+          Send-Msg "[SYS] <b>UBUNTU SERVER ACTIVE!</b>`n`n[KEY] <b>SSH:</b> <code>ssh runneradmin@$ipInfo</code>`nPass: <code>$passInfo</code>`n`n[NET] Cloudflare Tunnel Service telah dijalankan otomatis!`nFile <code>setup.sh</code> telah disiapkan. Ketik /setup untuk eksekusi."
 
           $offset = 0
           while ($true) {
@@ -98,14 +103,8 @@ jobs:
                                   Send-Msg "[STATS] <b>SERVER HEALTH</b>`n- CPU: $cpuVal%`n- RAM: $ramUsed MB / $ramTotal MB`n- Uptime: $up"
                               }
                               "^/speedtest" { Send-Msg "[NET] <b>Speedtest:</b>`n<pre>$(Run-Bash "speedtest-cli --simple")</pre>" }
-                              "^/scanhost (.+)" { Send-Msg "[SCAN] <b>Nmap Result:</b>`n<pre>$(Run-Bash "nmap -Pn -F localhost")</pre>" }
+                              "^/scanhost (.+)" { Send-Msg "[SCAN] <b>Nmap Result:</b>`n<pre>$(Run-Bash "nmap -Pn -F $($matches[1])")</pre>" }
                               "^/kill (.+)" { Send-Msg "[KILL] <pre>$(Run-Bash "pkill -9 -f $($matches[1]) && echo 'Killed' || echo 'Not Found'")</pre>" }
-                              "^/expose (\d+)" { 
-                                  $port = $matches[1]
-                                  Run-Bash "nohup cloudflared tunnel --url http://localhost:$port > /tmp/cf-$port.log 2>&1 &"
-                                  Start-Sleep 5
-                                  Send-Msg "[NET] Tunnel Port $port aktif:`n<code>$(Run-Bash "grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' /tmp/cf-$port.log | head -1")</code>" 
-                              }
                               "^/setup" {
                                   Send-Msg "[SYS] Mengeksekusi <code>/root/setup.sh</code> di background...`nPass SSH (dari Secrets) telah di-inject sebagai password DB.`nCek progress: <code>/cmd tail -n 15 /tmp/setup.log</code>"
                                   Run-Bash "export SETUP_DB_PASS='$env:PTERO_DB_PASS'; nohup bash /root/setup.sh > /tmp/setup.log 2>&1 &" | Out-Null
