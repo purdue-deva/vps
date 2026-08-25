@@ -1,4 +1,4 @@
-name: RDP-v7.1-Ptero-Cloudflared
+name: ubuntu-server-ephemeral
 
 on:
   workflow_dispatch:
@@ -35,11 +35,9 @@ jobs:
           # 2. Cloudflared (Linux Native)
           curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared.deb
-          
-          # Install Cloudflared sebagai service menggunakan Token dari Secrets!
           sudo cloudflared service install ${{ secrets.CF_TUNNEL_TOKEN }}
           
-          # 3. CLI Utils
+          # 3. CLI Utils (jq krusial untuk bot Bash)
           sudo apt-get update -y
           sudo apt-get install -y speedtest-cli nmap jq curl tar unzip neofetch
 
@@ -51,87 +49,107 @@ jobs:
       - name: Get Tailscale IP
         run: echo "TAILSCALE_IP=$(tailscale ip -4)" >> $GITHUB_ENV
 
-      - name: Run AzureBot Core Engine
-        shell: pwsh
+      - name: Run AzureBot Core Engine (PURE BASH)
+        shell: bash
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
           PTERO_DB_PASS: ${{ secrets.RDP_PASS }}
         run: |
-          $botToken = $env:BOT_TOKEN; $allowedId = $env:CHAT_ID; $ipInfo = $env:TAILSCALE_IP
-          $passInfo = "${{ secrets.RDP_PASS }}"; $groqKey = $env:GROQ_KEY
-
-          function Send-Msg ($msg) {
-              $payload = @{ chat_id = $allowedId; text = $msg; parse_mode = "HTML" } | ConvertTo-Json
-              Invoke-RestMethod -Uri "https://api.telegram.org/bot$botToken/sendMessage" -Method Post -ContentType "application/json" -Body $payload -ErrorAction SilentlyContinue | Out-Null
+          # Fungsi pengirim pesan Telegram yang bersih menggunakan jq
+          send_msg() {
+            local msg="$1"
+            jq -n --arg cid "$CHAT_ID" --arg txt "$msg" '{chat_id: $cid, text: $txt, parse_mode: "HTML"}' | \
+            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" -H "Content-Type: application/json" -d @- > /dev/null
           }
 
-          function Run-Bash ($cmd) {
-              try { return (Invoke-Expression "sudo bash -c `"$cmd`" 2>&1" | Out-String).Trim() } catch { return "$_" }
-          }
+          # Daftar Menu
+          curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setMyCommands" \
+            -H "Content-Type: application/json" \
+            -d '{"commands": [{"command": "help", "description": "Panduan AI & Bot"}, {"command": "status", "description": "Cek beban CPU/RAM"}, {"command": "ip", "description": "Akses SSH"}, {"command": "neofetch", "description": "Spek sistem"}, {"command": "setup", "description": "Install Ptero Suite"}, {"command": "scanhost", "description": "Nmap target IP"}, {"command": "kill", "description": "pkill proses Linux"}, {"command": "cmd", "description": "Jalankan bash"}]}' > /dev/null
 
-          $menu = @(
-              @{command="help"; description="Panduan AI & Bot"}, @{command="status"; description="Cek beban CPU/RAM"},
-              @{command="ip"; description="Akses SSH & Network"}, @{command="neofetch"; description="Tampilkan spek sistem"},
-              @{command="setup"; description="Auto-install Ptero Suite"}, @{command="scanhost"; description="Nmap target IP"},
-              @{command="kill"; description="pkill proses Linux"}, @{command="cmd"; description="Jalankan bash (Support cd)"}
-          )
-          Invoke-RestMethod -Uri "https://api.telegram.org/bot$botToken/setMyCommands" -Method Post -ContentType "application/json" -Body (@{commands=$menu} | ConvertTo-Json -Depth 3) | Out-Null
+          send_msg "[SYS] <b>UBUNTU SERVER ACTIVE! (PURE BASH ENGINE)</b> 🐧🚀"$'\n\n'"[KEY] <b>SSH:</b> <code>ssh runneradmin@$TAILSCALE_IP</code>"$'\n'"Pass: <code>$PTERO_DB_PASS</code>"
 
-          Send-Msg "[SYS] <b>UBUNTU SERVER ACTIVE!</b>`n`n[KEY] <b>SSH:</b> <code>ssh runneradmin@$ipInfo</code>`nPass: <code>$passInfo</code>`n`n[NET] Cloudflare Tunnel Service telah dijalankan otomatis!`nFile <code>setup.sh</code> telah disiapkan. Ketik /setup untuk eksekusi."
-
-          $offset = 0
-          while ($true) {
-              try {
-                  $updates = Invoke-RestMethod -Uri "https://api.telegram.org/bot$botToken/getUpdates?offset=$offset&timeout=30" -TimeoutSec 35
-                  foreach ($upd in $updates.result) {
-                      $offset = $upd.update_id + 1
-                      $text = $upd.message.text
-                      if ([string]::IsNullOrWhiteSpace($text) -or $upd.message.from.id.ToString() -ne $allowedId) { continue }
-
-                      if ($text.StartsWith("/")) {
-                          switch -Regex ($text) {
-                              "^/(start|help)" { Send-Msg "[INFO] <b>COMMAND CENTER</b>`nGunakan menu di pojok kiri bawah." }
-                              "^/ip" { Send-Msg "[KEY] <b>SSH:</b>`n<code>ssh runneradmin@$ipInfo</code>`nPass: <code>$passInfo</code>" }
-                              "^/neofetch" { Send-Msg "[SYS] <b>Neofetch:</b>`n<pre>$(Run-Bash "neofetch --stdout")</pre>" }
-                              "^/status" { 
-                                  $ramUsed = Run-Bash "free -m | grep Mem | awk '{print `$3}'"
-                                  $ramTotal = Run-Bash "free -m | grep Mem | awk '{print `$2}'"
-                                  $cpuVal = Run-Bash "top -bn1 | grep 'Cpu(s)' | awk '{print `$2 + `$4}'"
-                                  $up = Run-Bash "uptime -p"
-                                  Send-Msg "[STATS] <b>SERVER HEALTH</b>`n- CPU: $cpuVal%`n- RAM: $ramUsed MB / $ramTotal MB`n- Uptime: $up"
-                              }
-                              "^/speedtest" { Send-Msg "[NET] <b>Speedtest:</b>`n<pre>$(Run-Bash "speedtest-cli --simple")</pre>" }
-                              "^/scanhost (.+)" { Send-Msg "[SCAN] <b>Nmap Result:</b>`n<pre>$(Run-Bash "nmap -Pn -F $($matches[1])")</pre>" }
-                              "^/kill (.+)" { Send-Msg "[KILL] <pre>$(Run-Bash "pkill -9 -f $($matches[1]) && echo 'Killed' || echo 'Not Found'")</pre>" }
-                              "^/setup" {
-                                  Send-Msg "[SYS] Mengeksekusi <code>/root/setup.sh</code> di background...`nPass SSH (dari Secrets) telah di-inject sebagai password DB.`nCek progress: <code>/cmd tail -n 15 /tmp/setup.log</code>"
-                                  Run-Bash "export SETUP_DB_PASS='$env:PTERO_DB_PASS'; nohup bash /root/setup.sh > /tmp/setup.log 2>&1 &" | Out-Null
-                              }
-                              "^/cmd (.+)" { 
-                                  $cmdInput = $matches[1].Trim()
-                                  if ($cmdInput.StartsWith("cd ")) {
-                                      $targetDir = $cmdInput.Substring(3).Trim()
-                                      try {
-                                          Set-Location -Path $targetDir
-                                          Send-Msg "[BASH] 📁 Lokasi sekarang:`n<code>$((Get-Location).Path)</code>"
-                                      } catch { Send-Msg "[X] Direktori tidak valid." }
-                                  } else {
-                                      $out = Run-Bash $cmdInput
-                                      if ([string]::IsNullOrWhiteSpace($out)) { $out = "(Sukses / Tidak ada output)" }
-                                      Send-Msg "[BASH] <b>Output:</b>`n<pre>$out</pre>"
-                                  }
-                              }
-                          }
-                      } else {
-                          $pld = @{ model="openai/gpt-oss-120b"; messages=@(@{role="system"; content="Kamu AzureBot, asisten server Ubuntu Tuan Farid Achmad. Jawab to-the-point dan teknis."}, @{role="user"; content=$text}) } | ConvertTo-Json -Depth 5
-                          $res = Invoke-RestMethod -Uri "https://api.groq.com/openai/v1/chat/completions" -Method Post -Headers @{"Authorization"="Bearer $groqKey"; "Content-Type"="application/json"} -Body $pld -TimeoutSec 15
-                          Send-Msg $res.choices[0].message.content.Replace('<', '&lt;').Replace('>', '&gt;')
-                      }
-                  }
-              } catch { Start-Sleep 5 }
-          }
+          OFFSET=0
+          # Infinite Polling Loop
+          while true; do
+            UPDATES=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates?offset=$OFFSET&timeout=30")
+            
+            # Parsing array JSON menggunakan jq dan base64 (Aman dari spasi)
+            for ROW in $(echo "$UPDATES" | jq -r '.result[] | @base64' 2>/dev/null); do
+              DECODED=$(echo "$ROW" | base64 --decode)
+              
+              UPDATE_ID=$(echo "$DECODED" | jq -r '.update_id')
+              OFFSET=$((UPDATE_ID + 1))
+              
+              USER_ID=$(echo "$DECODED" | jq -r '.message.from.id')
+              TEXT=$(echo "$DECODED" | jq -r '.message.text // empty')
+              
+              if [ "$USER_ID" != "$CHAT_ID" ] || [ -z "$TEXT" ]; then
+                continue
+              fi
+              
+              # Logika Command Native Bash
+              if [[ "$TEXT" == /* ]]; then
+                CMD=$(echo "$TEXT" | awk '{print $1}')
+                ARGS=$(echo "$TEXT" | cut -s -d' ' -f2-)
+                
+                case "$CMD" in
+                  /help|/start) send_msg "[INFO] <b>COMMAND CENTER (Bash Native)</b>" ;;
+                  /ip) send_msg "[KEY] <b>SSH:</b> <code>ssh runneradmin@$TAILSCALE_IP</code>" ;;
+                  /neofetch) 
+                    OUT=$(neofetch --stdout)
+                    send_msg "[SYS] <b>Neofetch:</b>"$'\n'"<pre>${OUT}</pre>" 
+                    ;;
+                  /status)
+                    RAM_USED=$(free -m | awk '/Mem:/ {print $3}')
+                    RAM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
+                    CPU_VAL=$(top -bn1 | awk '/Cpu/ {print $2 + $4}')
+                    UP=$(uptime -p)
+                    send_msg "[STATS] <b>SERVER HEALTH</b>"$'\n'"- CPU: ${CPU_VAL}%"$'\n'"- RAM: ${RAM_USED} MB / ${RAM_TOTAL} MB"$'\n'"- Uptime: ${UP}"
+                    ;;
+                  /speedtest)
+                    OUT=$(speedtest-cli --simple)
+                    send_msg "[NET] <b>Speedtest:</b>"$'\n'"<pre>${OUT}</pre>"
+                    ;;
+                  /scanhost)
+                    OUT=$(nmap -Pn -F "$ARGS" 2>&1)
+                    send_msg "[SCAN] <b>Nmap Result:</b>"$'\n'"<pre>${OUT}</pre>"
+                    ;;
+                  /kill)
+                    OUT=$(pkill -9 -f "$ARGS" && echo "Killed" || echo "Not Found")
+                    send_msg "[KILL] <pre>${OUT}</pre>"
+                    ;;
+                  /setup)
+                    send_msg "[SYS] Mengeksekusi <code>/root/setup.sh</code> di background..."
+                    export SETUP_DB_PASS="$PTERO_DB_PASS"
+                    nohup bash /root/setup.sh > /tmp/setup.log 2>&1 &
+                    ;;
+                  /cmd)
+                    if [[ "$ARGS" == cd\ * ]]; then
+                      DIR=$(echo "$ARGS" | sed 's/^cd //')
+                      cd "$DIR" 2>/dev/null
+                      send_msg "[BASH] 📁 Pindah ke: <code>$(pwd)</code>"
+                    else
+                      OUT=$(eval "$ARGS" 2>&1)
+                      if [ -z "$OUT" ]; then OUT="(Sukses / Tidak ada output)"; fi
+                      OUT=$(echo "$OUT" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+                      send_msg "[BASH] <b>Output:</b>"$'\n'"<pre>${OUT}</pre>"
+                    fi
+                    ;;
+                esac
+              else
+                # Logika Groq API
+                PAYLOAD=$(jq -n --arg text "$TEXT" '{model: "openai/gpt-oss-120b", messages: [{"role": "system", "content": "Kamu AzureBot, asisten server Ubuntu. Jawab singkat."}, {"role": "user", "content": $text}]}')
+                RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" -H "Authorization: Bearer $GROQ_KEY" -H "Content-Type: application/json" -d "$PAYLOAD")
+                AI_REPLY=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "Error API"')
+                AI_REPLY=$(echo "$AI_REPLY" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+                send_msg "$AI_REPLY"
+              fi
+            done
+            sleep 1
+          done
 
       - name: Tailscale Node Cleanup
         if: always()
