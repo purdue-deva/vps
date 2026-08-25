@@ -30,7 +30,7 @@ jobs:
         run: |
           # 1. Tailscale
           curl -fsSL https://tailscale.com/install.sh | sh
-          sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="azure-workstation" --accept-routes
+          sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="ubuntu-server-azure" --accept-routes
           
           # 2. Cloudflared (Linux Native)
           curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
