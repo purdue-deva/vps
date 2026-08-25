@@ -9,7 +9,7 @@ export DEBIAN_FRONTEND=noninteractive
 PANEL_DOMAIN="panel.paridx.my.id"
 WINGS_DOMAIN="wings.paridx.my.id"
 PANEL_PORT=80
-DB_PASS="${SETUP_DB_PASS}" # <-- Sedot otomatis dari GitHub Secret RDP_PASS
+DB_PASS="${SETUP_DB_PASS}"
 
 echo -e "\e[36m[+] Memulai instalasi Pterodactyl Suite...\e[0m"
 
@@ -18,7 +18,7 @@ apt install -y software-properties-common curl apt-transport-https ca-certificat
 
 # 2. Tambah Repo & Install PHP 8.2
 LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php
-apt update -y 
+apt update -y
 apt install -y php8.2 php8.2-{common,cli,gd,mysql,mbstring,bcmath,xml,fpm,curl,zip}
 
 # Set default PHP ke 8.2 untuk berjaga-jaga
@@ -74,7 +74,7 @@ php artisan p:user:make \
 
 chown -R www-data:www-data /var/www/pterodactyl/*
 
-# 7. Setup Nginx (Integrasi dengan Port 8081 & Socket PHP 8.2)
+# 7. Setup Nginx (Integrasi dengan Port 80 & Socket PHP 8.2)
 cat <<EOF > /etc/nginx/sites-available/pterodactyl.conf
 server {
     listen $PANEL_PORT;
