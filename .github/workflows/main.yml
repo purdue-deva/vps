@@ -103,7 +103,7 @@ jobs:
                   sudo curl -s -o "/root/uploads/$DOC_NAME" "https://api.telegram.org/file/bot$BOT_TOKEN/$FILE_PATH"
                   send_msg "[+] Tersimpan di: <code>/root/uploads/$DOC_NAME</code>"
                 else
-                  send_msg "[X] Gagal mengambil file. Mungkin melampaui limit bot (20MB)."
+                  send_msg "[X] Gagal mengambil file. Mungkin melampaui limit bot (Maksimal penerimaan bot: 20MB)."
                 fi
                 continue
               fi
@@ -167,7 +167,8 @@ jobs:
                     ;;
                 esac
               else
-                PAYLOAD=$(jq -n --arg text "$TEXT" '{model: "llama3-70b-8192", messages: [{"role": "system", "content": "Kamu AzureBot, asisten server Ubuntu. Jawab singkat."}, {"role": "user", "content": $text}]}')
+
+                PAYLOAD=$(jq -n --arg text "$TEXT" '{model: "gpt-oss-120b", messages: [{"role": "system", "content": "Kamu AzureBot, asisten server Ubuntu. Jawab singkat."}, {"role": "user", "content": $text}]}')
                 RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" -H "Authorization: Bearer $GROQ_KEY" -H "Content-Type: application/json" -d "$PAYLOAD")
                 AI_REPLY=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "Error API"')
                 AI_REPLY=$(echo "$AI_REPLY" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
