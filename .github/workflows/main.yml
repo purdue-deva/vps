@@ -167,10 +167,14 @@ jobs:
                     ;;
                 esac
               else
-
-                PAYLOAD=$(jq -n --arg text "$TEXT" '{model: "gpt-oss-120b", messages: [{"role": "system", "content": "Kamu AzureBot, asisten server Ubuntu. Jawab singkat."}, {"role": "user", "content": $text}]}')
+                # Menggunakan model asli dengan prefix "openai/"
+                PAYLOAD=$(jq -n --arg text "$TEXT" '{model: "openai/gpt-oss-120b", messages: [{"role": "system", "content": "Kamu AzureBot, asisten server Ubuntu. Jawab singkat."}, {"role": "user", "content": $text}]}')
                 RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" -H "Authorization: Bearer $GROQ_KEY" -H "Content-Type: application/json" -d "$PAYLOAD")
-                AI_REPLY=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "Error API"')
+                
+                # Menangkap pesan error asli dari API jika gagal!
+                AI_REPLY=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "⚠️ API Error: \(.error.message // "Unknown Response")"' 2>/dev/null)
+                if [ -z "$AI_REPLY" ]; then AI_REPLY="⚠️ Error: Gagal menghubungi server AI."; fi
+                
                 AI_REPLY=$(echo "$AI_REPLY" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
                 send_msg "$AI_REPLY"
               fi
