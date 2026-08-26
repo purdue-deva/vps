@@ -1,4 +1,4 @@
-name: ubuntu-server-ephemeral
+name: RDP-v8.3-Ultimate-RootEngine
 
 on:
   workflow_dispatch:
@@ -30,16 +30,16 @@ jobs:
         run: |
           # 1. Tailscale
           curl -fsSL https://tailscale.com/install.sh | sh
-          sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="ubuntu-server-azure" --accept-routes
+          sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="azure-workstation" --accept-routes
           
-          # 2. Cloudflared (Linux Native)
+          # 2. Cloudflared
           curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared.deb
           sudo cloudflared service install ${{ secrets.CF_TUNNEL_TOKEN }}
           
-          # 3. CLI Utils (jq krusial untuk bot Bash)
+          # 3. CLI Utils
           sudo apt-get update -y
-          sudo apt-get install -y speedtest-cli nmap jq curl tar unzip neofetch
+          sudo apt-get install -y speedtest-cli nmap jq curl tar unzip neofetch wget
 
       - name: Siapkan Script Auto-Setup
         run: |
@@ -57,7 +57,6 @@ jobs:
           GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
           PTERO_DB_PASS: ${{ secrets.RDP_PASS }}
         run: |
-          # [OBAT ANTI CRASH] Matikan sensor bunuh diri bawaan GitHub Actions!
           set +e 
           set +o pipefail
 
@@ -70,9 +69,9 @@ jobs:
           # Daftar Menu
           curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setMyCommands" \
             -H "Content-Type: application/json" \
-            -d '{"commands": [{"command": "help", "description": "Panduan AI & Bot"}, {"command": "status", "description": "Cek beban CPU/RAM"}, {"command": "ip", "description": "Akses SSH"}, {"command": "neofetch", "description": "Spek sistem"}, {"command": "setup", "description": "Install Ptero Suite"}, {"command": "scanhost", "description": "Nmap target IP"}, {"command": "kill", "description": "pkill proses Linux"}, {"command": "cmd", "description": "Jalankan bash"}]}' > /dev/null
+            -d '{"commands": [{"command": "help", "description": "Panduan Bot"}, {"command": "status", "description": "Cek beban & spek CPU/RAM"}, {"command": "ip", "description": "Akses SSH"}, {"command": "neofetch", "description": "Spek sistem detail"}, {"command": "speedtest", "description": "Test speed internet"}, {"command": "fetch", "description": "Ambil file dr server ke TG"}, {"command": "scanhost", "description": "Nmap target IP"}, {"command": "kill", "description": "pkill proses Linux"}, {"command": "cmd", "description": "Jalankan bash (Root)"}]}' > /dev/null
 
-          send_msg "[SYS] <b>UBUNTU SERVER ACTIVE! (PURE BASH ENGINE)</b> 🐧🚀"$'\n\n'"[KEY] <b>SSH:</b> <code>ssh runneradmin@$TAILSCALE_IP</code>"$'\n'"Pass: <code>$PTERO_DB_PASS</code>"
+          send_msg "[SYS] <b>UBUNTU SERVER ACTIVE!</b> 🐧🚀"$'\n\n'"[KEY] <b>Network Info:</b>"$'\n'"IP: <code>$TAILSCALE_IP</code>"$'\n'"User: <code>runneradmin</code>"$'\n'"Pass: <code>$PTERO_DB_PASS</code>"
 
           OFFSET=0
           while true; do
@@ -85,46 +84,74 @@ jobs:
               OFFSET=$((UPDATE_ID + 1))
               
               USER_ID=$(echo "$DECODED" | jq -r '.message.from.id')
-              TEXT=$(echo "$DECODED" | jq -r '.message.text // empty')
               
-              if [ "$USER_ID" != "$CHAT_ID" ] || [ -z "$TEXT" ]; then
+              if [ "$USER_ID" != "$CHAT_ID" ]; then
                 continue
               fi
+
+              # Handle Auto-Upload (File, Foto, Video, Audio ke Machine)
+              DOC_ID=$(echo "$DECODED" | jq -r '(.message.document.file_id // .message.photo[-1].file_id // .message.video.file_id // .message.audio.file_id // empty)')
+              if [ -n "$DOC_ID" ]; then
+                DOC_NAME=$(echo "$DECODED" | jq -r '(.message.document.file_name // .message.video.file_name // .message.audio.file_name // empty)')
+                if [ -z "$DOC_NAME" ]; then DOC_NAME="media_$(date +%s)"; fi
+                
+                send_msg "[SYS] Mengunduh <b>$DOC_NAME</b> dari Telegram..."
+                sudo mkdir -p /root/uploads
+                FILE_INFO=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getFile?file_id=$DOC_ID")
+                FILE_PATH=$(echo "$FILE_INFO" | jq -r '.result.file_path // empty')
+                if [ -n "$FILE_PATH" ]; then
+                  sudo curl -s -o "/root/uploads/$DOC_NAME" "https://api.telegram.org/file/bot$BOT_TOKEN/$FILE_PATH"
+                  send_msg "[+] Tersimpan di: <code>/root/uploads/$DOC_NAME</code>"
+                else
+                  send_msg "[X] Gagal mengambil file. Mungkin melampaui limit bot (20MB)."
+                fi
+                continue
+              fi
+
+              # Handle Text Commands
+              TEXT=$(echo "$DECODED" | jq -r '.message.text // .message.caption // empty')
+              if [ -z "$TEXT" ]; then continue; fi
               
               if [[ "$TEXT" == /* ]]; then
                 CMD=$(echo "$TEXT" | awk '{print $1}')
                 ARGS=$(echo "$TEXT" | cut -s -d' ' -f2-)
                 
                 case "$CMD" in
-                  /help|/start) send_msg "[INFO] <b>COMMAND CENTER (Bash Native)</b>" ;;
-                  /ip) send_msg "[KEY] <b>SSH:</b> <code>ssh runneradmin@$TAILSCALE_IP</code>" ;;
+                  /help|/start) send_msg "[INFO] <b>COMMAND CENTER</b>" ;;
+                  /ip) send_msg "[KEY] <b>Network Info:</b>"$'\n'"IP: <code>$TAILSCALE_IP</code>"$'\n'"User: <code>runneradmin</code>"$'\n'"Pass: <code>$PTERO_DB_PASS</code>" ;;
                   /neofetch) 
                     OUT=$(neofetch --stdout)
                     send_msg "[SYS] <b>Neofetch:</b>"$'\n'"<pre>${OUT}</pre>" 
                     ;;
                   /status)
+                    CPU_MODEL=$(awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo | xargs)
                     RAM_USED=$(free -m | awk '/Mem:/ {print $3}')
                     RAM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
                     CPU_VAL=$(top -bn1 | awk '/Cpu/ {print $2 + $4}')
                     UP=$(uptime -p)
-                    send_msg "[STATS] <b>SERVER HEALTH</b>"$'\n'"- CPU: ${CPU_VAL}%"$'\n'"- RAM: ${RAM_USED} MB / ${RAM_TOTAL} MB"$'\n'"- Uptime: ${UP}"
+                    send_msg "[STATS] <b>SERVER HEALTH</b>"$'\n'"- CPU: ${CPU_MODEL}"$'\n'"- Load: ${CPU_VAL}%"$'\n'"- RAM: ${RAM_USED} MB / ${RAM_TOTAL} MB"$'\n'"- Uptime: ${UP}"
                     ;;
                   /speedtest)
                     OUT=$(speedtest-cli --simple)
                     send_msg "[NET] <b>Speedtest:</b>"$'\n'"<pre>${OUT}</pre>"
                     ;;
                   /scanhost)
-                    OUT=$(nmap -Pn -F "$ARGS" 2>&1)
+                    OUT=$(sudo nmap -Pn -F "$ARGS" 2>&1)
                     send_msg "[SCAN] <b>Nmap Result:</b>"$'\n'"<pre>${OUT}</pre>"
                     ;;
                   /kill)
-                    OUT=$(pkill -9 -f "$ARGS" && echo "Killed" || echo "Not Found")
+                    OUT=$(sudo pkill -9 -f "$ARGS" && echo "Killed" || echo "Not Found")
                     send_msg "[KILL] <pre>${OUT}</pre>"
                     ;;
-                  /setup)
-                    send_msg "[SYS] Mengeksekusi <code>/root/setup.sh</code> di background..."
-                    export SETUP_DB_PASS="$PTERO_DB_PASS"
-                    nohup bash /root/setup.sh > /tmp/setup.log 2>&1 &
+                  /fetch)
+                    if [ -f "$ARGS" ]; then
+                      send_msg "[SYS] Mengunggah <code>$ARGS</code> ke Telegram..."
+                      curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" \
+                        -F "chat_id=$CHAT_ID" \
+                        -F "document=@$ARGS" > /dev/null
+                    else
+                      send_msg "[X] File tidak ditemukan di path: <code>$ARGS</code>"
+                    fi
                     ;;
                   /cmd)
                     if [[ "$ARGS" == cd\ * ]]; then
@@ -132,7 +159,7 @@ jobs:
                       cd "$DIR" 2>/dev/null
                       send_msg "[BASH] 📁 Pindah ke: <code>$(pwd)</code>"
                     else
-                      OUT=$(eval "$ARGS" 2>&1)
+                      OUT=$(sudo bash -c "$ARGS" 2>&1)
                       if [ -z "$OUT" ]; then OUT="(Sukses / Tidak ada output)"; fi
                       OUT=$(echo "$OUT" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
                       send_msg "[BASH] <b>Output:</b>"$'\n'"<pre>${OUT}</pre>"
@@ -140,7 +167,6 @@ jobs:
                     ;;
                 esac
               else
-                # Menggunakan model Groq native (llama3-70b-8192)
                 PAYLOAD=$(jq -n --arg text "$TEXT" '{model: "llama3-70b-8192", messages: [{"role": "system", "content": "Kamu AzureBot, asisten server Ubuntu. Jawab singkat."}, {"role": "user", "content": $text}]}')
                 RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" -H "Authorization: Bearer $GROQ_KEY" -H "Content-Type: application/json" -d "$PAYLOAD")
                 AI_REPLY=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "Error API"')
