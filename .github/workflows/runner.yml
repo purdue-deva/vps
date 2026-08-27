@@ -50,7 +50,7 @@ jobs:
         run: echo "TAILSCALE_IP=$(tailscale ip -4)" >> $GITHUB_ENV
 
       - name: Run AzureBot Core Engine (PURE BASH)
-        shell: sudo bash
+        shell: bash
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
