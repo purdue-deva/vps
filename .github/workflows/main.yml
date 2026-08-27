@@ -136,15 +136,25 @@ jobs:
                     send_msg "[NET] <b>Speedtest:</b>"$'\n'"<pre>${OUT}</pre>"
                     ;;
                   /scanhost)
-                    OUT=$(sudo nmap -Pn -F "$ARGS" 2>&1)
-                    send_msg "[SCAN] <b>Nmap Result:</b>"$'\n'"<pre>${OUT}</pre>"
+                    if [ -z "$ARGS" ]; then
+                      send_msg "[X] Error: Masukkan IP/Domain target!"
+                    else
+                      OUT=$(sudo nmap -Pn -F "$ARGS" 2>&1)
+                      send_msg "[SCAN] <b>Nmap Result:</b>"$'\n'"<pre>${OUT}</pre>"
+                    fi
                     ;;
                   /kill)
-                    OUT=$(sudo pkill -9 -f "$ARGS" && echo "Killed" || echo "Not Found")
-                    send_msg "[KILL] <pre>${OUT}</pre>"
+                    if [ -z "$ARGS" ]; then
+                      send_msg "[X] Error: Masukkan nama proses! Jangan biarkan kosong atau mesin akan mati."
+                    else
+                      OUT=$(sudo pkill -9 -f "$ARGS" && echo "Killed" || echo "Not Found")
+                      send_msg "[KILL] <pre>${OUT}</pre>"
+                    fi
                     ;;
                   /fetch)
-                    if [ -f "$ARGS" ]; then
+                    if [ -z "$ARGS" ]; then
+                      send_msg "[X] Error: Masukkan path file yang mau di-fetch!"
+                    elif [ -f "$ARGS" ]; then
                       send_msg "[SYS] Mengunggah <code>$ARGS</code> ke Telegram..."
                       curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" \
                         -F "chat_id=$CHAT_ID" \
@@ -154,7 +164,9 @@ jobs:
                     fi
                     ;;
                   /cmd)
-                    if [[ "$ARGS" == cd\ * ]]; then
+                    if [ -z "$ARGS" ]; then
+                      send_msg "[X] Error: Masukkan perintah Bash!"
+                    elif [[ "$ARGS" == cd\ * ]]; then
                       DIR=$(echo "$ARGS" | sed 's/^cd //')
                       cd "$DIR" 2>/dev/null
                       send_msg "[BASH] 📁 Pindah ke: <code>$(pwd)</code>"
@@ -181,7 +193,7 @@ jobs:
             done
             sleep 1
           done
-
+          
       - name: Tailscale Node Cleanup
         if: always()
         run: |
