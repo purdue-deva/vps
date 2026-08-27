@@ -71,9 +71,18 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"commands": [{"command": "help", "description": "Panduan Bot"}, {"command": "status", "description": "Cek beban & spek CPU/RAM"}, {"command": "ip", "description": "Akses SSH"}, {"command": "neofetch", "description": "Spek sistem detail"}, {"command": "speedtest", "description": "Test speed internet"}, {"command": "fetch", "description": "Ambil file dr server ke TG"}, {"command": "scanhost", "description": "Nmap target IP"}, {"command": "kill", "description": "pkill proses Linux"}, {"command": "cmd", "description": "Jalankan bash (Root)"}]}' > /dev/null
 
+          # FLUSH PENDING UPDATES (Anti Death-Loop / Poison Pill)
+          LATEST=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates")
+          LAST_ID=$(echo "$LATEST" | jq -r '.result[-1].update_id // empty')
+          if [ -n "$LAST_ID" ]; then
+            OFFSET=$((LAST_ID + 1))
+            curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates?offset=$OFFSET" > /dev/null
+          else
+            OFFSET=0
+          fi
+
           send_msg "[SYS] <b>UBUNTU SERVER ACTIVE!</b> 🐧🚀"$'\n\n'"[KEY] <b>Network Info:</b>"$'\n'"IP: <code>$TAILSCALE_IP</code>"$'\n'"User: <code>runneradmin</code>"$'\n'"Pass: <code>$PTERO_DB_PASS</code>"
 
-          OFFSET=0
           while true; do
             UPDATES=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates?offset=$OFFSET&timeout=30")
             
@@ -89,7 +98,7 @@ jobs:
                 continue
               fi
 
-              # Handle Auto-Upload (File, Foto, Video, Audio ke Machine)
+              # Handle Auto-Upload Document via Telegram
               DOC_ID=$(echo "$DECODED" | jq -r '(.message.document.file_id // .message.photo[-1].file_id // .message.video.file_id // .message.audio.file_id // empty)')
               if [ -n "$DOC_ID" ]; then
                 DOC_NAME=$(echo "$DECODED" | jq -r '(.message.document.file_name // .message.video.file_name // .message.audio.file_name // empty)')
@@ -114,7 +123,8 @@ jobs:
               
               if [[ "$TEXT" == /* ]]; then
                 CMD=$(echo "$TEXT" | awk '{print $1}')
-                ARGS=$(echo "$TEXT" | cut -s -d' ' -f2-)
+                # Trim spasi di awal/akhir dengan sed agar aman dari auto-space HP
+                ARGS=$(echo "$TEXT" | cut -s -d' ' -f2- | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
                 
                 case "$CMD" in
                   /help|/start) send_msg "[INFO] <b>COMMAND CENTER</b>" ;;
@@ -145,7 +155,9 @@ jobs:
                     ;;
                   /kill)
                     if [ -z "$ARGS" ]; then
-                      send_msg "[X] Error: Masukkan nama proses! Jangan biarkan kosong atau mesin akan mati."
+                      send_msg "[X] Error: Masukkan nama proses! Jangan biarkan kosong."
+                    elif [[ "$ARGS" == *"bash"* ]] || [[ "$ARGS" == *"curl"* ]]; then
+                      send_msg "[X] Ditolak! Membunuh proses itu akan mematikan bot."
                     else
                       OUT=$(sudo pkill -9 -f "$ARGS" && echo "Killed" || echo "Not Found")
                       send_msg "[KILL] <pre>${OUT}</pre>"
@@ -177,13 +189,14 @@ jobs:
                       send_msg "[BASH] <b>Output:</b>"$'\n'"<pre>${OUT}</pre>"
                     fi
                     ;;
+                  *)
+                    send_msg "⚠️ Command <code>$CMD</code> tidak dikenali. Ketik /help untuk melihat menu."
+                    ;;
                 esac
               else
-                # Menggunakan model asli dengan prefix "openai/"
                 PAYLOAD=$(jq -n --arg text "$TEXT" '{model: "openai/gpt-oss-120b", messages: [{"role": "system", "content": "Kamu AzureBot, asisten server Ubuntu. Jawab singkat."}, {"role": "user", "content": $text}]}')
                 RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" -H "Authorization: Bearer $GROQ_KEY" -H "Content-Type: application/json" -d "$PAYLOAD")
                 
-                # Menangkap pesan error asli dari API jika gagal!
                 AI_REPLY=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "⚠️ API Error: \(.error.message // "Unknown Response")"' 2>/dev/null)
                 if [ -z "$AI_REPLY" ]; then AI_REPLY="⚠️ Error: Gagal menghubungi server AI."; fi
                 
