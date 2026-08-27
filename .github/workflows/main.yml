@@ -50,7 +50,7 @@ jobs:
         run: echo "TAILSCALE_IP=$(tailscale ip -4)" >> $GITHUB_ENV
 
       - name: Run AzureBot Core Engine (PURE BASH)
-        shell: sudo bash {0}
+        shell: sudo -E bash {0}
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -74,7 +74,7 @@ jobs:
           # FLUSH PENDING UPDATES (Anti Death-Loop / Poison Pill)
           LATEST=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates")
           LAST_ID=$(echo "$LATEST" | jq -r '.result[-1].update_id // empty')
-          if [ -n "$LAST_ID" ]; then
+          if [ -n "$LAST_ID" ] && [ "$LAST_ID" != "null" ]; then
             OFFSET=$((LAST_ID + 1))
             curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates?offset=$OFFSET" > /dev/null
           else
@@ -206,7 +206,7 @@ jobs:
             done
             sleep 1
           done
-          
+
       - name: Tailscale Node Cleanup
         if: always()
         run: |
