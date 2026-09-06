@@ -15,8 +15,15 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Tarik Repository (Checkout)
+      - name: Tarik Repo Runner (Checkout Self)
         uses: actions/checkout@v4
+
+      - name: Tarik Repo SC Rimuru Utama (Via PAT)
+        uses: actions/checkout@v4
+        with:
+          repository: 'riddsanz/rimuru'
+          token: ${{ secrets.PAT_GITHUB }}
+          path: 'rimuru'
 
       - name: Setup Server Credentials & SSH
         run: |
@@ -37,25 +44,52 @@ jobs:
           sudo dpkg -i cloudflared.deb
           sudo cloudflared service install ${{ secrets.CF_TUNNEL_TOKEN }}
           
-          # 3. CLI Utils & Dependencies (Ditambah ttyd, nodejs, npm)
+          # 3. CLI Utils & Dependencies
           sudo apt-get update -y
-          sudo apt-get install -y speedtest-cli nmap jq curl tar unzip neofetch wget ttyd nodejs npm
+          sudo apt-get install -y speedtest-cli nmap jq curl tar unzip neofetch wget ttyd
 
           # 4. Siapkan Folder Uploads Sejak Awal
           sudo mkdir -p /root/uploads
           sudo chmod 777 /root/uploads
 
-          # 5. Jalankan HTTP Server di Background (Port 8090)
-          nohup sudo npx http-server /root/uploads -p 8090 > /tmp/http-server.log 2>&1 &
+      - name: Setup Node.js v22 (Untuk PM2 & Bot)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
-          # 6. Jalankan TTYD Web Terminal di Background (Port 7681)
+      - name: Jalankan Web Terminal & File Server (Background)
+        run: |
+          nohup sudo npx http-server /root/uploads -p 8090 > /tmp/http-server.log 2>&1 &
           sudo pkill -9 ttyd || true
           nohup sudo ttyd -W -p 7681 -c parid:paridos bash > /tmp/ttyd.log 2>&1 &
 
       - name: Siapkan Script Auto-Setup (Panel)
         run: |
-          sudo cp panel.sh /root/panel.sh
-          sudo chmod +x /root/panel.sh
+          sudo cp panel.sh /root/panel.sh || true
+          sudo chmod +x /root/panel.sh || true
+
+      - name: Setup Rclone & Bangkitkan Bot WA (Rimuru)
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          echo "[1/4] Install Rclone & Inject Config..."
+          sudo -v ; curl https://rclone.org/install.sh | sudo bash
+          mkdir -p /root/.config/rclone
+          echo "$RCLONE_CONF" > /root/.config/rclone/rclone.conf
+
+          echo "[2/4] Setup Dependencies Bot..."
+          cd rimuru
+          npm install
+
+          echo "[3/4] Tarik Nyawa & Ingatan dari GDrive..."
+          # Digunakan || true agar tidak error saat run pertama kali (saat folder gdrive belum ada)
+          rclone copy gdrive:Backup_Bot/storage/ ./storage/ || true
+          rclone copy gdrive:Backup_Bot/database/ ./database/ || true
+
+          echo "[4/4] Install PM2 & Start Bot Rimuru..."
+          sudo npm install -g pm2
+          pm2 start . --name rimuru
+          echo "✅ Rimuru berhasil hidup di latar belakang!"
 
       - name: Get Tailscale IP
         run: echo "TAILSCALE_IP=$(tailscale ip -4)" >> $GITHUB_ENV
@@ -218,8 +252,20 @@ jobs:
             sleep 1
           done
 
-      - name: Tailscale Node Cleanup
+      - name: Doomsday Backup & Cleanup
         if: always()
         run: |
-          echo "Memutuskan koneksi dan menghapus node dari Tailnet..."
+          echo "==== MEMULAI DOOMSDAY PROTOCOL ===="
+          echo "[1/3] Membius Rimuru (Stop PM2)..."
+          sudo pm2 stop rimuru || true
+          sudo pkill -9 node || true
+          
+          echo "[2/3] Menyelamatkan Data ke GDrive..."
+          cd rimuru || true
+          # Memastikan data terbaru didorong (sync/copy) ke brankas
+          rclone copy ./storage/ gdrive:Backup_Bot/storage/ || true
+          rclone copy ./database/ gdrive:Backup_Bot/database/ || true
+          
+          echo "[3/3] Memutuskan koneksi Tailscale..."
           sudo tailscale logout || true
+          echo "==== SERVER KIAMAT DENGAN DAMAI ===="
