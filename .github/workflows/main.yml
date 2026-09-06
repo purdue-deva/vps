@@ -74,17 +74,19 @@ jobs:
         run: |
           echo "[1/4] Install Rclone & Inject Config..."
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
-          sudo mkdir -p /root/.config/rclone
-          echo "$RCLONE_CONF" | sudo tee /root/.config/rclone/rclone.conf > /dev/null
+          
+          # HAPUS sudo, biarkan terinstal di home/runner/.config
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
 
           echo "[2/4] Setup Dependencies Bot..."
           cd rimuru
           npm install
 
           echo "[3/4] Tarik Nyawa & Ingatan dari GDrive..."
-          # Digunakan || true agar tidak error saat run pertama kali (saat folder gdrive belum ada)
-          rclone copy gdrive:Backup_Bot/storage/ ./storage/ || true
-          rclone copy gdrive:Backup_Bot/database/ ./database/ || true
+          # PERBAIKAN: Gunakan nama remote Backup_Bot:
+          rclone copy Backup_Bot:storage/ ./storage/ || true
+          rclone copy Backup_Bot:database/ ./database/ || true
 
           echo "[4/4] Install PM2 & Start Bot Rimuru..."
           sudo npm install -g pm2
@@ -257,14 +259,20 @@ jobs:
         run: |
           echo "==== MEMULAI DOOMSDAY PROTOCOL ===="
           echo "[1/3] Membius Rimuru (Stop PM2)..."
-          sudo pm2 stop rimuru || true
-          sudo pkill -9 node || true
+          pm2 stop rimuru || true
+          pkill -9 node || true
           
           echo "[2/3] Menyelamatkan Data ke GDrive..."
+          # Pastikan masuk ke folder yang benar
           cd rimuru || true
-          # Memastikan data terbaru didorong (sync/copy) ke brankas
-          rclone copy ./storage/ gdrive:Backup_Bot/storage/ || true
-          rclone copy ./database/ gdrive:Backup_Bot/database/ || true
+          
+          # PERBAIKAN: Dorong ke remote Backup_Bot:
+          rclone copy ./storage/ Backup_Bot:storage/ || true
+          rclone copy ./database/ Backup_Bot:database/ || true
+          
+          echo "[3/3] Memutuskan koneksi Tailscale..."
+          sudo tailscale logout || true
+          echo "==== SERVER KIAMAT DENGAN DAMAI ===="
           
           echo "[3/3] Memutuskan koneksi Tailscale..."
           sudo tailscale logout || true
