@@ -75,7 +75,6 @@ jobs:
           echo "[1/4] Install Rclone & Inject Config..."
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
           
-          # HAPUS sudo, biarkan terinstal di home/runner/.config
           mkdir -p ~/.config/rclone
           echo "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
 
@@ -83,12 +82,15 @@ jobs:
           cd rimuru
           npm install
 
-          echo "[3/4] Tarik Nyawa & Ingatan dari GDrive..."
-          # PERBAIKAN: Gunakan nama remote Backup_Bot:
-          # PERBAIKAN: Gunakan nama remote Backup_Bot:
-          rclone copy Backup_Bot:storage/ ./storage/ --transfers 128 --checkers 128 --size-only --ignore-checksum --no-traverse -P || true
-          rclone copy Backup_Bot:database/ ./database/ --database/ --transfers 128 --checkers 128 --size-only --ignore-checksum --no-traverse -P || true
-
+          echo "[3/4] Tarik Nyawa & Ingatan (Arsip) dari GDrive..."
+          # 1. Download 2 file arsip besar (super cepat karena cuma 2 request API)
+          rclone copy Backup_Bot:storage_backup.tar.gz ./ --ignore-checksum -P || true
+          rclone copy Backup_Bot:database_backup.tar.gz ./ --ignore-checksum -P || true
+          
+          # 2. Ekstrak file di lokal VPS agar kembali jadi folder chunks semula
+          # Setelah diekstrak, file .tar.gz aslinya langsung dihapus biar hemat disk
+          if [ -f storage_backup.tar.gz ]; then tar -xzf storage_backup.tar.gz && rm storage_backup.tar.gz; fi
+          if [ -f database_backup.tar.gz ]; then tar -xzf database_backup.tar.gz && rm database_backup.tar.gz; fi
 
           echo "[4/4] Install PM2 & Start Bot Rimuru..."
           sudo npm install -g pm2
@@ -265,12 +267,17 @@ jobs:
           pkill -9 node || true
           
           echo "[2/3] Menyelamatkan Data ke GDrive..."
-          # Pastikan masuk ke folder yang benar
           cd rimuru || true
           
-          # PERBAIKAN: Dorong ke remote Backup_Bot:
-          rclone copy ./storage/ Backup_Bot:storage/ || true
-          rclone copy ./database/ Backup_Bot:database/ || true
+          # 1. Kompres folder menjadi satu file arsip besar
+          echo "Membungkus memori menjadi arsip..."
+          tar -czf storage_backup.tar.gz storage/ || true
+          tar -czf database_backup.tar.gz database/ || true
+          
+          # 2. Dorong arsip tunggal ke GDrive (Akan otomatis menimpa yang lama)
+          echo "Mengunggah arsip ke GDrive..."
+          rclone copy storage_backup.tar.gz Backup_Bot: --ignore-checksum -P || true
+          rclone copy database_backup.tar.gz Backup_Bot: --ignore-checksum -P || true
           
           echo "[3/3] Memutuskan koneksi Tailscale..."
           sudo tailscale logout || true
