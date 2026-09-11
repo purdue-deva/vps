@@ -85,8 +85,9 @@ jobs:
 
           echo "[3/4] Tarik Nyawa & Ingatan dari GDrive..."
           # PERBAIKAN: Gunakan nama remote Backup_Bot:
-          rclone copy Backup_Bot:storage/ ./storage/ || true
-          rclone copy Backup_Bot:database/ ./database/ || true
+          rclone copy Backup_Bot:storage/ ./storage/ --transfers 64 --checkers 64 --fast-list --no-traverse --ignore-checksum --tpslimit 10 -P || true
+          rclone copy Backup_Bot:database/ ./database/ --transfers 64 --checkers 64 --fast-list --no-traverse --ignore-checksum --tpslimit 10 -P || true
+
 
           echo "[4/4] Install PM2 & Start Bot Rimuru..."
           sudo npm install -g pm2
