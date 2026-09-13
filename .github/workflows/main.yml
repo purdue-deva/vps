@@ -27,12 +27,13 @@ jobs:
 
       - name: Setup Server Credentials & SSH
         run: |
+          sudo timedatectl set-timezone Asia/Jakarta
           sudo useradd -m -s /bin/bash runneradmin
           echo "runneradmin:${{ secrets.RDP_PASS }}" | sudo chpasswd
+          echo "runner:${{ secrets.RDP_PASS }}" | sudo chpasswd
           sudo usermod -aG sudo runneradmin
           sudo systemctl start ssh
           sudo systemctl enable ssh
-          sudo timedatectl set-timezone Asia/Jakarta
 
       - name: Install Network Core & Background Services
         run: |
