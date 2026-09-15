@@ -285,6 +285,3 @@ jobs:
           sudo tailscale logout || true
           echo "==== SERVER KIAMAT DENGAN DAMAI ===="
           
-          echo "[3/3] Memutuskan koneksi Tailscale..."
-          sudo tailscale logout || true
-          echo "==== SERVER KIAMAT DENGAN DAMAI ===="
