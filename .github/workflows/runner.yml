@@ -48,7 +48,7 @@ jobs:
           
           # 3. CLI Utils & Dependencies
           sudo apt-get update -y
-          sudo apt-get install -y speedtest-cli nmap jq curl tar unzip neofetch wget ttyd
+          sudo apt-get install -y speedtest-cli nmap jq curl tar unzip fastfetch wget ttyd
 
           # 4. Siapkan Folder Uploads Sejak Awal
           sudo mkdir -p /root/uploads
